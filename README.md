@@ -1,106 +1,231 @@
-# 🚀 Multi-Table Hybrid Search API v3 (Optimized)
+# 🧠 Multi-Table Hybrid Search API v3.0
 
-**FastAPI**, **Anthropic Claude 3 Haiku**, **Qdrant**를 기반으로 구축된 고성능 하이브리드 검색 및 분석 엔진입니다.
-사용자의 자연어 질의를 분석하여 **SQL 기반의 정형 필터링**과 **Vector 기반의 의미 검색**을 결합하고, **부정 조건(Negative Filtering)**까지 정밀하게 제어하여 빠르고 정확한 결과를 제공합니다.
+FastAPI · Claude 3.5 Sonnet · Qdrant · PostgreSQL 기반 **지능형 하이브리드 검색 & 분석 엔진**
 
----
+이 프로젝트는 **자연어 질의 → SQL 정형 필터링 + Vector 비정형 의미 검색 → Reranking → Insight 생성** 구조로 이루어진 고급 검색 엔진입니다.
 
-## ⚡️ 핵심 최적화 (v3.0 Highlights)
-
-이전 버전 대비 **속도**와 **정확도** 측면에서 대폭적인 개선이 이루어졌습니다.
-
-1.  **🚀 응답 속도 극대화 (10s → 3s 이내)**
-    * **LLM 경량화**: 쿼리 파싱 모델을 `Claude 3.5 Sonnet`에서 **`Claude 3 Haiku`**로 교체하여 의도 분석 속도를 3배 이상 향상시켰습니다.
-    * **Non-blocking Architecture**: 무거운 검색 로직(`search.py`)을 `asyncio.to_thread`로 별도 스레드에서 실행하여 Event Loop 차단을 방지합니다.
-    * **Parallel Data Fetching**: PostgreSQL(테이블 데이터)과 Qdrant(설문 데이터) 조회를 `asyncio.gather`로 **병렬 실행**하여 대기 시간을 단축했습니다.
-
-2.  **🎯 정확도 및 필터링 강화**
-    * **Strict Negative Filtering**: "없음", "안 함" 등의 부정 답변을 **정규식(Regex)**과 **벡터 유사도(Vector)** 이중 검증으로 완벽하게 제외합니다.
-    * **Smart Column Selection**: 검색 의도에 맞춰 사용자에게 보여줄 테이블 컬럼을 동적으로 최적화합니다.
-
-3.  **⚙️ 리소스 효율성**
-    * **Singleton Pattern**: DB Connection Pool 및 Qdrant Client를 전역 싱글톤으로 관리하여 연결 오버헤드를 제거했습니다.
-    * **Caching**: `lru_cache`를 활용하여 설정 및 임베딩 모델 로딩을 최적화했습니다.
+사용자의 질문을 LLM이 해석하고, Qdrant와 PostgreSQL을 조합한 하이브리드 검색으로 최적의 패널 데이터를 찾아냅니다.
 
 ---
 
-## 🛠️ 시스템 아키텍처 & 워크플로우
+# 🚀 Features (주요 기능)
 
-사용자가 질의(Query)를 입력했을 때의 데이터 처리 흐름입니다.
-
-### 1. 🧠 Query Understanding (`llm.py`)
-* **Role**: 입력된 자연어를 `Claude 3 Haiku`가 분석하여 구조화된 JSON으로 변환합니다.
-* **Output**:
-    * `Demographic Filters` (SQL): 나이, 지역, 성별 등 인구통계 조건.
-    * `Semantic Conditions` (Vector): 취향, 라이프스타일, 소비 패턴 등.
-    * `Negative Flags`: 제외해야 할 조건 식별 (`is_negative: true`).
-
-### 2. 🔍 Hybrid Search Engine (`search.py`, `search_helpers.py`)
-* **Step 1. SQL Filtering (Pre-filtering)**: PostgreSQL `welcome_meta2` 테이블에서 인구통계 조건에 맞는 `panel_id` 후보군을 1차적으로 추출합니다.
-* **Step 2. Vector Search**: 추출된 후보군을 대상으로 Qdrant(`qpoll_vectors_v2` 등)에서 의미 기반 검색을 수행합니다.
-* **Step 3. Strict Validation**:
-    * **Text Filter**: `STRICT_NEGATIVE_PATTERNS` (정규식)을 사용해 부정적인 텍스트 답변을 강제 제외합니다.
-    * **Vector Filter**: LLM이 식별한 부정 조건과 유사한 벡터를 가진 패널을 2차로 제외합니다.
-
-### 3. 📊 Analysis & Aggregation (`insights.py`, `main.py`)
-* **Analysis**: 검색된 패널들의 답변을 군집화(DBSCAN)하여 주요 특징을 분석하고 시각화 데이터(Chart)를 생성합니다.
-* **Aggregation**: `main.py`에서 비동기 병렬 처리로 최종 테이블 데이터와 분석 결과를 조립하여 반환합니다.
+- **자연어 → SQL + Semantic JSON 자동 파싱**
+- **PostgreSQL + Qdrant 벡터 DB 하이브리드 검색**
+- **Field-aware Semantic Routing** (질문과 가장 관련된 컬럼 자동 매칭)
+- **Candidate Reranking 알고리즘**
+- **Negative Filtering** (부정 응답 제거)
+- **통계 차트 + 인사이트 요약 생성**
 
 ---
 
-## 📂 주요 모듈 설명
+# 🏗️ System Architecture
 
-| 파일명 | 역할 및 핵심 기능 |
-| :--- | :--- |
-| **`main.py`** | **API Entrypoint & Async Controller**<br>- `/api/search` 등 엔드포인트 정의.<br>- `asyncio.to_thread`, `asyncio.gather`를 통한 비동기/병렬 처리 오케스트레이션. |
-| **`search.py`** | **Search Logic Core**<br>- 하이브리드 검색의 전체 파이프라인(SQL → Vector → Negative Filter) 제어.<br>- 정밀 필터링 로직 구현. |
-| **`llm.py`** | **Query Parser**<br>- LangChain & Claude 3 Haiku를 사용하여 자연어를 필터 조건으로 파싱.<br>- 부정 조건(`is_negative`) 식별 프롬프트 최적화. |
-| **`search_helpers.py`** | **Query Builder & Embeddings**<br>- JSON 필터를 PostgreSQL `WHERE` 절로 변환.<br>- HuggingFace 임베딩 모델 로드 및 관리. |
-| **`db.py`** | **Database Connector**<br>- PostgreSQL Connection Pool 및 Qdrant Client 싱글톤 관리.<br>- 리소스 누수 방지 및 재사용성 보장. |
-| **`insights.py`** | **Data Analyst**<br>- 검색 결과에 대한 통계, 클러스터링 분석 및 차트 데이터 생성. |
-| **`mapping_rules.py`** | **Knowledge Base**<br>- "MZ세대", "고소득" 같은 키워드 매핑 규칙 및 설문 템플릿 정의. |
+아키텍처는 **Layered Architecture + Repository Pattern** 기반입니다.
+
+```Javascript
+graph TD
+    User[Client / Frontend] -->|REST API Request| Main[Controller (main.py)]
+
+    subgraph "Application Layer"
+        Main --> Service[Service Orchestrator (services.py)]
+    end
+
+    subgraph "Logic Layer"
+        Service --> LLM[Query Parser (llm.py)]
+        Service --> Router[Semantic Router (semantic_router.py)]
+        Service --> Search[Search Engine (search.py)]
+        Service --> Insight[Analyst (insights.py)]
+    end
+
+    subgraph "Data Access Layer (Repository)"
+        Search --> Repo[Repository (repository.py)]
+        Insight --> Repo
+    end
+
+    subgraph "Infrastructure"
+        Repo -->|SQL Filter| PG[(PostgreSQL: User Meta)]
+        Repo -->|Vector Search| Qdrant[(Qdrant: Survey Data)]
+    end
+
+```
 
 ---
 
-## 💻 설치 및 실행 (Setup)
+# 📂 Folder & Module Structure
 
-### 1. 환경 변수 설정 (.env)
-프로젝트 루트에 `.env` 파일을 생성하고 다음 정보를 입력하세요.
-```ini
-# AWS / Database
-DB_HOST=localhost
-DB_NAME=your_db
-DB_USER=postgres
-DB_PASSWORD=your_password
+## 1. Core Logic
 
-# Vector DB
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
+### `main.py` — **Controller**
 
-# AI Models
-ANTHROPIC_API_KEY=''
+- FastAPI 엔드포인트 정의
+- 요청 수신 → `services.py` 호출 → 응답 반환
+- 비동기 API 처리 담당
 
-# 의존성 설치
+### `services.py` — **Orchestrator**
+
+- 검색 플로우 전체를 조율
+    - LLM 분석
+    - Routing
+    - Hybrid Search
+    - Insight 생성
+- 모듈 간 트랜잭션 흐름 제어
+
+### `search.py` — **Hybrid Search Engine (핵심)**
+
+- SQL 후보군 존재 여부에 따라 Reranking 전략 선택
+- PostgreSQL + Qdrant 하이브리드 검색 실행
+- Python Fuzzy Match + Negative Filtering 수행
+
+### `llm.py` — **Query Parser**
+
+- Claude 3.5 Sonnet으로 자연어 → 구조화된 JSON 변환
+    - `Demographic Filters` (SQL 용)
+    - `Semantic Conditions` (Vector 용)
+
+### `semantic_router.py` — **Field Routing**
+
+- 질의와 가장 관련된 DB 컬럼을 벡터 기반으로 자동 매핑
+- 예: “OTT” → `ott_count`, `most_used_app`
+
+---
+
+## 2. Data Layer
+
+### `repository.py`
+
+- **DB 접근 로직 분리**
+- `PanelRepository` → PostgreSQL 조회
+- `VectorRepository` → Qdrant 벡터 검색
+
+### `db.py`
+
+- PostgreSQL Connection Pool 관리
+- Qdrant Client 싱글톤 인스턴스 유지
+
+---
+
+## 3. Support / Config
+
+### `mapping_rules.py`
+
+- 자연어 → 표준화된 비즈니스 룰 매핑
+    - “MZ세대” → “20~30대”
+    - “고소득” → “월 500 이상”
+- 부정 표현 정규식 패턴(“안 본다”, “관심 없음”)
+
+### `insights.py`
+
+- 검색 결과 기반 차트 생성 (Bar/Pie)
+- 통계 정리 및 한 줄 요약 인사이트 생성
+
+### `settings.py`
+
+- AWS Secrets Manager → 환경 변수 안전 로딩
+
+---
+
+# 🔄 Search Workflow (검색 플로우)
+
+사용자 예시 질의:
+
+> “서울 사는 30대 중 OTT를 즐겨 보는 사람 찾아줘”
+> 
+
+### **1. Query Understanding (llm.py)**
+
+입력 질의 → SQL 필터 + 의미 조건 JSON 생성
+
+```json
+{
+  "sql_filters": { "region_major": "서울", "age_range": [30, 39] },
+  "semantic": "OTT를 즐겨 보는"
+}
+
+```
+
+---
+
+### **2. Semantic Routing (semantic_router.py)**
+
+- “OTT” → `ott_count`, `most_used_app` 컬럼과 연관도 높다고 판단
+- 해당 필드 중심으로 벡터 검색 스코어 계산
+
+---
+
+### **3. Hybrid Search + Reranking (search.py)**
+
+### Case A — SQL 후보군 있음
+
+1. PostgreSQL에서 후보 패널 ID 추출
+2. **해당 ID만 대상으로** Qdrant Vector Reranking
+3. 부정 응답 제거
+4. Python Fuzzy Matching으로 미세 정합
+
+### Case B — SQL 후보 없음
+
+- 전체 Qdrant 컬렉션 Vector Search 실행
+
+---
+
+### **4. Aggregation (repository.py)**
+
+`asyncio.gather`로 패널 메타 + 설문 벡터 정보 병렬 조회
+
+---
+
+### **5. Insight Generation (insights.py)**
+
+- 통계 차트 생성
+- 패턴 분석 → 한 줄 인사이트 생성 후 반환
+
+---
+
+# 💾 Data Schema
+
+### **PostgreSQL — welcome_meta2**
+
+정형 메타데이터 저장
+
+- `panel_id`, `gender`, `birth_year`, `region_major`, `income_monthly`
+
+### **Qdrant — qpoll_vectors_v2**
+
+설문 벡터 저장
+
+- `panel_id`, `question`, `sentence`, `vector`
+
+### **Qdrant — welcome_subjective_vectors**
+
+주관식 선호 데이터
+
+- 취미, 가치관, 라이프스타일 텍스트 벡터
+
+---
+
+# 🛠️ Tech Stack
+
+| 분야 | 기술 |
+| --- | --- |
+| Language | Python 3.11 |
+| Backend | FastAPI, Uvicorn |
+| Database | PostgreSQL(psycopg2), Qdrant |
+| AI/ML | Claude 3.5 Sonnet, HuggingFace Embeddings |
+| Architecture | Layered Architecture, Repository Pattern |
+| Infra | Docker, AWS Secrets Manager |
+| Orchestration | asyncio 기반 병렬 처리 |
+
+
+## 의존성 설치
 pip install -r requirements.txt
 
-### 🛠️ 실행 방법
+---
+
+## 🛠️ 실행 방법
 
 #### 1. 가상환경 활성화
-.\venv\Scripts\activate
+- .\venv\Scripts\activate
 
 #### 2. API 서버 실행
-uvicorn main:app --reload
-uvicorn main:app --reload --log-config log_config.json
-
-### 🔍 API Endpoints
-* POST /api/search (Lite Mode)
-
-** 빠른 응답 속도 중시. 검색 결과 리스트와 테이블 데이터 반환.
-
-*POST /api/search-and-analyze (Pro Mode)
-
-** 심층 분석 모드. 검색 결과와 함께 통계 차트(Charts) 및 인사이트 제공.
-
-* GET /health
-
-** 서버 및 DB 연결 상태 확인.
+- uvicorn main:app --reload
+- uvicorn main:app --reload --log-config log_config.json
