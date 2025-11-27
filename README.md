@@ -1,6 +1,6 @@
 # 🧠 Multi-Table Hybrid Search API v3.0
 
-FastAPI · Claude 3.5 Sonnet · Qdrant · PostgreSQL 기반 **지능형 하이브리드 검색 & 분석 엔진**
+FastAPI · Claude 4.5 Sonnet · Qdrant · PostgreSQL 기반 **지능형 하이브리드 검색 & 분석 엔진**
 
 이 프로젝트는 **자연어 질의 → SQL 정형 필터링 + Vector 비정형 의미 검색 → Reranking → Insight 생성** 구조로 이루어진 고급 검색 엔진입니다.
 
